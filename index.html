@@ -124,7 +124,7 @@ async function fetchRoute(){
     };
     directionsService.route(request, (result, status) => {
       if(status === google.maps.DirectionsStatus.OK){
-        log('経路取得に成功しました。'); // ★ご依頼のログを追加
+        log('経路取得に成功しました。');
         directionsRenderer.setDirections(result);
         const leg = result.routes[0].legs[0];
         steps = leg.steps.map((s, i)=> ({
@@ -135,7 +135,7 @@ async function fetchRoute(){
           html: s.instructions
         }));
         currentStepIdx = 0;
-        log('ステップ数:', steps.length);
+        // log('ステップ数:', steps.length); // ★この行を削除しました
       } else {
         log('ルート検索エラー:', status);
         alert('経路取得に失敗しました: ' + status);
