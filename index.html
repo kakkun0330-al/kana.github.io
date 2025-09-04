@@ -135,7 +135,6 @@ async function fetchRoute(){
           html: s.instructions
         }));
         currentStepIdx = 0;
-        // log('ステップ数:', steps.length); // ★この行を削除しました
       } else {
         log('ルート検索エラー:', status);
         alert('経路取得に失敗しました: ' + status);
@@ -189,11 +188,9 @@ async function connectToPico(){
   try {
     log('Bluetoothデバイスを検索しています...');
     const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
-    log('デバイスを発見しました。GATTサーバーに接続します...');
+    log('デバイスを発見しました。...');
     const server = await device.gatt.connect();
-    log('GATTサーバーに接続しました。サービスを取得します...');
     const service = await server.getPrimaryService(SERVICE_UUID);
-    log('サービスを発見しました。キャラクタリスティックを取得します...');
     navChar = await service.getCharacteristic(NAV_CHAR_UUID);
     log('Pico Wへの接続に成功しました。');
   } catch(error) {
