@@ -19,18 +19,18 @@
   <strong>Bike LED Nav</strong> — Google Directions → Web Bluetooth → Pico W
 </header>
 <div class="row">
-  <input id="apiKey" type="text" placeholder="ここにGoogle Maps APIキーを入力してください"/>
+  <input id="apiKey" type="text" placeholder="Google Maps APIキーを入力してください"/>
   <button id="setApiKeyBtn">APIキー設定 & 地図読込</button>
 </div>
 <div class="row">
-  <input id="origin" type="text" placeholder="出発地（空なら現在地）"/>
-  <input id="destination" type="text" placeholder="目的地（住所/ランドマーク）"/>
+  <input id="origin" type="text" placeholder="出発地（空欄で現在地）"/>
+  <input id="destination" type="text" placeholder="目的地（住所/名称）"/>
 </div>
 <div class="row">
   <button id="routeBtn">経路取得</button>
-  <button id="connectBtn">Pico W 接続</button>
+  <button id="connectBtn">Pico Wに接続</button>
   <button id="startNavBtn">ナビ開始</button>
-  <button id="stopNavBtn">停止</button>
+  <button id="stopNavBtn">ナビ停止</button>
 </div>
 <div id="map">地図を読み込むには、APIキーを設定してください。</div>
 <pre id="log"></pre>
@@ -86,10 +86,10 @@ function loadGoogleMapsApi() {
   // Handle API key loading errors
   script.onerror = () => {
     log('Failed to load Google Maps API. Please check your API key and network connection.');
-    alert('Google Maps APIの読み込みに失敗しました。APIキーが正しいか、ネットワーク接続を確認してください。');
+    alert('Google Maps APIの読み込みに失敗しました。APIキーが正しいか、もしくはネットワーク接続を確認してください。');
   };
   document.head.appendChild(script);
-  log('Loading Google Maps...');
+  log('グーグルマップを読み込んでいます...');
 }
 
 
@@ -139,7 +139,7 @@ async function fetchRoute(){
         log('steps loaded:', steps.length);
       } else {
         log('Directions error:', status);
-        alert('経路取得に失敗: ' + status);
+        alert('経路取得に失敗しました: ' + status);
       }
     });
   } catch (err) {
@@ -196,7 +196,7 @@ async function connectToPico(){
     const service = await server.getPrimaryService(SERVICE_UUID);
     log('Service found. Getting characteristic...');
     navChar = await service.getCharacteristic(NAV_CHAR_UUID);
-    log('Connected to Pico W GATT successfully.');
+    log('Pico Wへの接続に成功しました.');
   } catch(error) {
     log(`BLE Connection Error: ${error.name} - ${error.message}`);
     alert(`Bluetooth接続に失敗しました: ${error.message}`);
@@ -249,7 +249,7 @@ function startNav(){
   watchId = navigator.geolocation.watchPosition(pos => {
     const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
     if (currentStepIdx >= steps.length) {
-        log("Navigation finished.");
+        log("ナビを終了します.");
         stopNav();
         return;
     }
@@ -273,7 +273,7 @@ function startNav(){
     log(`Geolocation watch error: ${err.message} (Code: ${err.code})`);
   }, {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
   
-  log('Navigation started.');
+  log('ナビを開始します.');
 }
 
 function stopNav(){
@@ -292,7 +292,7 @@ function stopNav(){
     dv.setUint8(7, 0x00);
     navChar.writeValue(buf).catch(err => log("Error sending stop command:", err));
   }
-  log('Navigation stopped.');
+  log('ナビを停止します.');
 }
 
 // ====== Event Listeners ======
