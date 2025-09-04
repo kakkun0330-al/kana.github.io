@@ -32,14 +32,14 @@
   <button id="startNavBtn">ナビ開始</button>
   <button id="stopNavBtn">ナビ停止</button>
 </div>
-<div id="map">地図を読み込むには、APIキーを設定してください。</div>
+<div id="map">地図を読み込むには、APIキーを設定してください</div>
 <pre id="log"></pre>
 <script>
-// ====== Configuration (UUIDs) ======
+// ====== 設定 (UUID) ======
 const SERVICE_UUID = '0000feed-0000-1000-8000-00805f9b34fb';
 const NAV_CHAR_UUID = '0000feed-0001-1000-8000-00805f9b34fb';
 
-// ====== Variables ======
+// ====== 変数 ======
 let map, directionsService, directionsRenderer;
 let steps = [];
 let currentStepIdx = 0;
@@ -47,19 +47,19 @@ let navChar = null;
 let watchId = null;
 let isMapApiLoaded = false;
 
-// ====== Logging ======
+// ====== ログ表示関数 ======
 function log(...args){
   const el = document.getElementById('log');
   el.textContent += args.join(' ') + '\n';
   el.scrollTop = el.scrollHeight;
 }
 
-// ====== Google Maps Initialization ======
-// This function is now called by the Google Maps script callback
+// ====== Google Maps 初期化 ======
+// Google Mapsスクリプトのコールバックによって呼び出される
 window.initMap = function(){
-  log('Google Maps API loaded successfully.');
+  log('Google Maps APIの読み込みが完了しました。');
   isMapApiLoaded = true;
-  document.getElementById('map').textContent = ''; // Clear placeholder text
+  document.getElementById('map').textContent = ''; // プレースホルダーテキストをクリア
   map = new google.maps.Map(document.getElementById('map'), { center: {lat:35.681236, lng:139.767125}, zoom: 13 });
   directionsService = new google.maps.DirectionsService();
   directionsRenderer = new google.maps.DirectionsRenderer({ map });
@@ -72,7 +72,6 @@ function loadGoogleMapsApi() {
     return;
   }
   
-  // Remove any existing Google Maps script to prevent re-loading errors
   const existingScript = document.getElementById('googleMapsScript');
   if (existingScript) {
     existingScript.remove();
@@ -83,17 +82,16 @@ function loadGoogleMapsApi() {
   script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
   script.async = true;
   script.defer = true;
-  // Handle API key loading errors
   script.onerror = () => {
-    log('Failed to load Google Maps API. Please check your API key and network connection.');
+    log('Google Maps APIの読み込みに失敗しました。APIキーとネットワーク接続を確認してください。');
     alert('Google Maps APIの読み込みに失敗しました。APIキーが正しいか、もしくはネットワーク接続を確認してください。');
   };
   document.head.appendChild(script);
-  log('グーグルマップを読み込んでいます...');
+  log('Googleマップを読み込んでいます...');
 }
 
 
-// ====== Directions API ======
+// ====== ルート検索API ======
 async function fetchRoute(){
   if (!isMapApiLoaded) {
     alert('先にAPIキーを設定して地図を読み込んでください。');
@@ -101,7 +99,7 @@ async function fetchRoute(){
   }
   const originInput = document.getElementById('origin').value.trim();
   const dest = document.getElementById('destination').value.trim();
-  if(!dest){ alert('目的地を入力してください'); return; }
+  if(!dest){ alert('目的地を入力してください。'); return; }
   let originPromise;
   if(originInput){
     originPromise = Promise.resolve(originInput);
@@ -126,6 +124,7 @@ async function fetchRoute(){
     };
     directionsService.route(request, (result, status) => {
       if(status === google.maps.DirectionsStatus.OK){
+        log('経路取得に成功しました。'); // ★ご依頼のログを追加
         directionsRenderer.setDirections(result);
         const leg = result.routes[0].legs[0];
         steps = leg.steps.map((s, i)=> ({
@@ -136,16 +135,16 @@ async function fetchRoute(){
           html: s.instructions
         }));
         currentStepIdx = 0;
-        log('steps loaded:', steps.length);
+        log('ステップ数:', steps.length);
       } else {
-        log('Directions error:', status);
+        log('ルート検索エラー:', status);
         alert('経路取得に失敗しました: ' + status);
       }
     });
   } catch (err) {
     let errorMessage = '現在地の取得に失敗しました。';
     if (err && err.message) {
-        log(`Geolocation Error: ${err.message} (Code: ${err.code})`);
+        log(`現在地取得エラー: ${err.message} (コード: ${err.code})`);
     }
 
     switch(err.code) {
@@ -162,147 +161,4 @@ async function fetchRoute(){
              errorMessage += `\n理由: ${err.message}`;
     }
     
-    alert(errorMessage + '\n\n出発地を直接入力してください。');
-  }
-}
-
-// ====== Maneuver to Code Mapping ======
-function toManeuverCode(m){
-  const k = (m||'').toLowerCase();
-  if(k.includes('uturn')) return 0x08;
-  if(k.includes('roundabout') && k.includes('left')) return 0x09;
-  if(k.includes('roundabout') && k.includes('right')) return 0x0A;
-  if(k.includes('sharp') && k.includes('left')) return 0x04;
-  if(k.includes('sharp') && k.includes('right')) return 0x07;
-  if(k.includes('slight') && k.includes('left')) return 0x02;
-  if(k.includes('slight') && k.includes('right')) return 0x05;
-  if(k.includes('merge') || k.includes('ramp') || k.includes('fork')){
-    return 0x01;
-  }
-  if(k.includes('left')) return 0x03;
-  if(k.includes('right')) return 0x06;
-  return 0x01; // default to straight
-}
-
-// ====== BLE Connection ======
-async function connectToPico(){
-  if(!('bluetooth' in navigator)){ alert('このブラウザはWeb Bluetooth未対応です'); return; }
-  try {
-    log('Requesting Bluetooth device...');
-    const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
-    log('Device found. Connecting to GATT server...');
-    const server = await device.gatt.connect();
-    log('GATT server connected. Getting service...');
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    log('Service found. Getting characteristic...');
-    navChar = await service.getCharacteristic(NAV_CHAR_UUID);
-    log('Pico Wへの接続に成功しました.');
-  } catch(error) {
-    log(`BLE Connection Error: ${error.name} - ${error.message}`);
-    alert(`Bluetooth接続に失敗しました: ${error.message}`);
-  }
-}
-
-// ====== Command Builder and Sender ======
-function buildNavCommand(stepIndex, maneuverCode, distMeters){
-  const buf = new ArrayBuffer(8);
-  const dv = new DataView(buf);
-  dv.setUint8(0, 0x01); // version
-  dv.setUint8(1, 0x01); // Message Type: NEXT_STEP
-  dv.setUint16(2, stepIndex, false); // big-endian
-  dv.setUint8(4, maneuverCode);
-  dv.setUint16(5, Math.max(0, Math.min(65535, Math.round(distMeters||0))), false); // big-endian
-  dv.setUint8(7, 0x00); // reserved
-  return buf;
-}
-async function sendStep(idx, dist){
-  if(!navChar){ log('Not connected'); return; }
-  const st = steps[idx];
-  if(!st){ log('No step data'); return; }
-  const code = toManeuverCode(st.maneuver);
-  const cmd = buildNavCommand(idx, code, dist);
-  try {
-    await navChar.writeValue(cmd);
-    log('Sent step', idx, st.maneuver, 'dist=', Math.round(dist), 'm');
-  } catch (error) {
-    log(`Failed to send step: ${error.message}`);
-  }
-}
-
-// ====== Navigation Logic ======
-function haversineMeters(a, b){
-  const toRad = d => d*Math.PI/180;
-  const R = 6371000; // Earth's radius in meters
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const sinDlat = Math.sin(dLat/2), sinDlng = Math.sin(dLng/2);
-  const h = sinDlat*sinDlat + Math.cos(lat1)*Math.cos(lat2)*sinDlng*sinDlng;
-  return 2*R*Math.asin(Math.sqrt(h));
-}
-
-function startNav(){
-  if(!steps.length){ alert('先に経路を取得してください'); return; }
-  if(watchId) navigator.geolocation.clearWatch(watchId);
-  
-  watchId = navigator.geolocation.watchPosition(pos => {
-    const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
-    if (currentStepIdx >= steps.length) {
-        log("ナビを終了します.");
-        stopNav();
-        return;
-    }
-    const st = steps[currentStepIdx];
-    const dist = haversineMeters(cur, st.end);
-
-    // Send update when under 50 meters
-    if(dist < 50){
-      sendStep(currentStepIdx, dist);
-    }
-    // Advance to next step when under 30 meters
-    if(dist < 30 && currentStepIdx < steps.length-1){
-      currentStepIdx++;
-      log("Advanced to next step:", currentStepIdx);
-      // Immediately send the new step info
-      const nextStep = steps[currentStepIdx];
-      const distToNext = haversineMeters(cur, nextStep.end);
-      sendStep(currentStepIdx, distToNext);
-    }
-  }, err => {
-    log(`Geolocation watch error: ${err.message} (Code: ${err.code})`);
-  }, {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
-  
-  log('ナビを開始します.');
-}
-
-function stopNav(){
-  if(watchId){ 
-    navigator.geolocation.clearWatch(watchId); 
-    watchId = null; 
-  }
-  if(navChar){
-    const buf = new ArrayBuffer(8);
-    const dv = new DataView(buf);
-    dv.setUint8(0, 0x01); // version
-    dv.setUint8(1, 0x02); // Message Type: CANCEL/STOP
-    dv.setUint16(2, 0, false);
-    dv.setUint8(4, 0xFF);
-    dv.setUint16(5, 0, false);
-    dv.setUint8(7, 0x00);
-    navChar.writeValue(buf).catch(err => log("Error sending stop command:", err));
-  }
-  log('ナビを停止します.');
-}
-
-// ====== Event Listeners ======
-document.getElementById('setApiKeyBtn').addEventListener('click', loadGoogleMapsApi);
-document.getElementById('routeBtn').addEventListener('click', fetchRoute);
-document.getElementById('connectBtn').addEventListener('click', connectToPico);
-document.getElementById('startNavBtn').addEventListener('click', startNav);
-document.getElementById('stopNavBtn').addEventListener('click', stopNav);
-
-</script>
-</body>
-</html>
-
+    alert
