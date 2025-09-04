@@ -161,4 +161,146 @@ async function fetchRoute(){
              errorMessage += `\n理由: ${err.message}`;
     }
     
-    alert
+    alert(errorMessage + '\n\n出発地を直接入力してください。');
+  }
+}
+
+// ====== Maneuverコードへの変換 ======
+function toManeuverCode(m){
+  const k = (m||'').toLowerCase();
+  if(k.includes('uturn')) return 0x08;
+  if(k.includes('roundabout') && k.includes('left')) return 0x09;
+  if(k.includes('roundabout') && k.includes('right')) return 0x0A;
+  if(k.includes('sharp') && k.includes('left')) return 0x04;
+  if(k.includes('sharp') && k.includes('right')) return 0x07;
+  if(k.includes('slight') && k.includes('left')) return 0x02;
+  if(k.includes('slight') && k.includes('right')) return 0x05;
+  if(k.includes('merge') || k.includes('ramp') || k.includes('fork')){
+    return 0x01;
+  }
+  if(k.includes('left')) return 0x03;
+  if(k.includes('right')) return 0x06;
+  return 0x01; // デフォルトは直進
+}
+
+// ====== BLE接続 ======
+async function connectToPico(){
+  if(!('bluetooth' in navigator)){ alert('このブラウザはWeb Bluetoothに対応していません。'); return; }
+  try {
+    log('Bluetoothデバイスを検索しています...');
+    const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
+    log('デバイスを発見しました。GATTサーバーに接続します...');
+    const server = await device.gatt.connect();
+    log('GATTサーバーに接続しました。サービスを取得します...');
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    log('サービスを発見しました。キャラクタリスティックを取得します...');
+    navChar = await service.getCharacteristic(NAV_CHAR_UUID);
+    log('Pico Wへの接続に成功しました。');
+  } catch(error) {
+    log(`Bluetooth接続エラー: ${error.name} - ${error.message}`);
+    alert(`Bluetooth接続に失敗しました: ${error.message}`);
+  }
+}
+
+// ====== コマンドの作成と送信 ======
+function buildNavCommand(stepIndex, maneuverCode, distMeters){
+  const buf = new ArrayBuffer(8);
+  const dv = new DataView(buf);
+  dv.setUint8(0, 0x01); // version
+  dv.setUint8(1, 0x01); // Message Type: NEXT_STEP
+  dv.setUint16(2, stepIndex, false); // big-endian
+  dv.setUint8(4, maneuverCode);
+  dv.setUint16(5, Math.max(0, Math.min(65535, Math.round(distMeters||0))), false); // big-endian
+  dv.setUint8(7, 0x00); // reserved
+  return buf;
+}
+async function sendStep(idx, dist){
+  if(!navChar){ log('Pico Wに接続されていません。'); return; }
+  const st = steps[idx];
+  if(!st){ log('ステップデータがありません。'); return; }
+  const code = toManeuverCode(st.maneuver);
+  const cmd = buildNavCommand(idx, code, dist);
+  try {
+    await navChar.writeValue(cmd);
+    log('ステップ送信:', idx, st.maneuver, '距離=', Math.round(dist), 'm');
+  } catch (error) {
+    log(`ステップの送信に失敗しました: ${error.message}`);
+  }
+}
+
+// ====== ナビゲーションのロジック ======
+function haversineMeters(a, b){
+  const toRad = d => d*Math.PI/180;
+  const R = 6371000; // 地球の半径 (メートル)
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const sinDlat = Math.sin(dLat/2), sinDlng = Math.sin(dLng/2);
+  const h = sinDlat*sinDlat + Math.cos(lat1)*Math.cos(lat2)*sinDlng*sinDlng;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+
+function startNav(){
+  if(!steps.length){ alert('先に経路を取得してください。'); return; }
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  
+  watchId = navigator.geolocation.watchPosition(pos => {
+    const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
+    if (currentStepIdx >= steps.length) {
+        log("ナビを終了します。");
+        stopNav();
+        return;
+    }
+    const st = steps[currentStepIdx];
+    const dist = haversineMeters(cur, st.end);
+
+    // 50m未満で指示を送信
+    if(dist < 50){
+      sendStep(currentStepIdx, dist);
+    }
+    // 30m未満で次のステップへ
+    if(dist < 30 && currentStepIdx < steps.length-1){
+      currentStepIdx++;
+      log("次のステップへ進みます:", currentStepIdx);
+      // すぐに次のステップ情報を送信
+      const nextStep = steps[currentStepIdx];
+      const distToNext = haversineMeters(cur, nextStep.end);
+      sendStep(currentStepIdx, distToNext);
+    }
+  }, err => {
+    log(`現在地の追跡エラー: ${err.message} (コード: ${err.code})`);
+  }, {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
+  
+  log('ナビを開始します。');
+}
+
+function stopNav(){
+  if(watchId){ 
+    navigator.geolocation.clearWatch(watchId); 
+    watchId = null; 
+  }
+  if(navChar){
+    const buf = new ArrayBuffer(8);
+    const dv = new DataView(buf);
+    dv.setUint8(0, 0x01); // version
+    dv.setUint8(1, 0x02); // Message Type: CANCEL/STOP
+    dv.setUint16(2, 0, false);
+    dv.setUint8(4, 0xFF);
+    dv.setUint16(5, 0, false);
+    dv.setUint8(7, 0x00);
+    navChar.writeValue(buf).catch(err => log("停止コマンドの送信エラー:", err));
+  }
+  log('ナビを停止します。');
+}
+
+// ====== イベントリスナー ======
+document.getElementById('setApiKeyBtn').addEventListener('click', loadGoogleMapsApi);
+document.getElementById('routeBtn').addEventListener('click', fetchRoute);
+document.getElementById('connectBtn').addEventListener('click', connectToPico);
+document.getElementById('startNavBtn').addEventListener('click', startNav);
+document.getElementById('stopNavBtn').addEventListener('click', stopNav);
+
+</script>
+</body>
+</html>
