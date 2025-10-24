@@ -19,7 +19,8 @@
   <div class="row">
     <button id="routeBtn">経路取得</button>
     <button id="connectBtn">Picoに接続</button>
-    <button id="disconnectBtn">Picoから切断</button>     <button id="startNavBtn">ナビ開始</button>
+    <button id="disconnectBtn">Picoから切断</button>
+    <button id="startNavBtn">ナビ開始</button>
     <button id="stopNavBtn">ナビ停止</button>
   </div>
   <div id="map">APIキーを設定して地図を読み込んでください</div>
@@ -101,26 +102,27 @@
       }
     };
 
-    // 特定の文字パターンをPicoに送信する関数を追加
-    // 新しいメッセージタイプ 0x03 (CHARACTER_PATTERN) を使用
+    // 特定の文字パターンをPicoに送信する関数
+    // プロトコル: version(uint8), type(uint8=0x03), char_code(uint16), duration_seconds(uint8), reserved(uint16)
     const sendCharacterPattern = async (characterCode, durationSeconds) => {
         if (!navChar) { log('Picoに接続されていません。'); return; }
         const buf = new ArrayBuffer(8);
         const dv = new DataView(buf);
         dv.setUint8(0, 0x01); // version
-        dv.setUint8(1, 0x03); // Message Type: CHARACTER_PATTERN (新しいタイプ)
+        dv.setUint8(1, 0x03); // Message Type: CHARACTER_PATTERN
         dv.setUint16(2, characterCode, false); // 表示する文字のコード（例: 'S' = 0x53）
-        dv.setUint16(4, durationSeconds, false); // 表示時間（秒）
-        dv.setUint16(6, 0x00, false); // Reserved
+        dv.setUint8(4, durationSeconds); // 表示時間（秒） - ここをUint8に変更
+        dv.setUint16(5, 0x00, false); // Reserved (残りの3バイトを埋める)
         try {
             await navChar.writeValue(buf);
-            log(`文字パターン送信: コード=${characterCode}, 時間=${durationSeconds}秒`);
+            log(`文字パターン送信: コード=${characterCode} ('${String.fromCharCode(characterCode)}'), 時間=${durationSeconds}秒`);
         } catch (error) {
             log(`文字パターンの送信に失敗しました: ${error.message}`);
         }
     };
 
-
+    // ナビゲーションステップをPicoに送信する関数
+    // プロトコル: version(uint8), type(uint8=0x01), step_idx(uint16), maneuver_code(uint8), distance(uint16)
     const sendStep = async (idx, dist) => {
       if(!navChar || !steps[idx]) return;
       const code = toManeuverCode(steps[idx].maneuver);
@@ -128,11 +130,11 @@
       const dv = new DataView(buf);
       dv.setUint8(0, 0x01); // version
       dv.setUint8(1, 0x01); // type: NEXT_STEP
-      dv.setUint16(2, idx, false);
-      dv.setUint8(4, code);
-      dv.setUint16(5, Math.round(dist||0), false);
+      dv.setUint16(2, idx, false); // val1: ステップインデックス
+      dv.setUint8(4, code); // val2: マニューバーコード
+      dv.setUint16(5, Math.round(dist||0), false); // val3: 距離
       await navChar.writeValue(buf);
-      log(`ステップ送信: ${idx}, ${steps[idx].maneuver}`);
+      log(`ステップ送信: ${idx}, ${steps[idx].maneuver}, 距離: ${Math.round(dist||0)}m`);
     };
 
     const haversineMeters = (a, b) => {
@@ -147,26 +149,32 @@
       if (watchId) navigator.geolocation.clearWatch(watchId);
       
       // ナビ開始時にLEDに「S」を3秒間表示
-      // 'S'のASCIIコードは0x53
-      sendCharacterPattern(0x53, 3); 
+      sendCharacterPattern(0x53, 3); // 'S'のASCIIコードは0x53, 3秒表示
 
       watchId = navigator.geolocation.watchPosition(pos => {
         const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
         if (!steps[currentStepIdx]) { stopNav(); return; }
         const dist = haversineMeters(cur, steps[currentStepIdx].end);
-        if (dist < 50) sendStep(currentStepIdx, dist);
-        if (dist < 30 && currentStepIdx < steps.length - 1) {
+        if (dist < 50) sendStep(currentStepIdx, dist); // 50m圏内に入ったら送信
+        if (dist < 30 && currentStepIdx < steps.length - 1) { // 30m圏内に入ったら次のステップへ
           currentStepIdx++;
-          log(`次のステップへ: ${currentStepIdx}`);
-        }
+          log(`次のステップへ: ${currentStepIdx}, 残り距離: ${dist.toFixed(1)}m`);
+        } else if (currentStepIdx === steps.length - 1 && dist < 30) {
+            log('最終目的地に到達しました！');
+            stopNav();
+        }
       }, err => log(`追跡エラー: ${err.message}`), {enableHighAccuracy:true});
       log('ナビ開始');
     };
 
+    // ナビ停止時にPicoにも停止コマンドを送信
     const stopNav = () => {
       if (watchId) navigator.geolocation.clearWatch(watchId); watchId=null;
       if (navChar) {
-        const buf = new ArrayBuffer(8); new DataView(buf).setUint8(1, 0x02); // type: CANCEL/STOP
+        const buf = new ArrayBuffer(8);
+        const dv = new DataView(buf);
+        dv.setUint8(0, 0x01); // version
+        dv.setUint8(1, 0x02); // type: CANCEL/STOP
         navChar.writeValue(buf);
       }
       log('ナビ停止');
@@ -175,7 +183,7 @@
     document.getElementById('setApiKeyBtn').onclick = loadGoogleMapsApi;
     document.getElementById('routeBtn').onclick = fetchRoute;
     document.getElementById('connectBtn').onclick = connectToPico;
-    document.getElementById('disconnectBtn').onclick = disconnectFromPico; // 切断ボタンのイベントリスナー
+    document.getElementById('disconnectBtn').onclick = disconnectFromPico;
     document.getElementById('startNavBtn').onclick = startNav;
     document.getElementById('stopNavBtn').onclick = stopNav;
   </script>
