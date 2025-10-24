@@ -1,191 +1,171 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bike LED Nav</title>
-  <style>body{font-family:system-ui,sans-serif;margin:0}.row,header{padding:8px;display:flex;gap:8px}input{flex:1;padding:8px}button{padding:8px 12px}#map{height:50vh;background:#e0e0e0}pre{background:#eee;padding:8px;max-height:100px;overflow:auto}</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bike LED Nav</title>
+  <style>body{font-family:system-ui,sans-serif;margin:0}.row,header{padding:8px;display:flex;gap:8px}input{flex:1;padding:8px}button{padding:8px 12px}#map{height:50vh;background:#e0e0e0}pre{background:#eee;padding:8px;max-height:100px;overflow:auto}</style>
 </head>
 <body>
-  <header><strong>Bike LED Nav</strong></header>
-  <div class="row">
-    <input id="apiKey" type="text" value="AIzaSyChDQfjqq_3Uh11vuUF1ELximyztCvZ6Js" placeholder="Google Maps APIキー"/>
-    <button id="setApiKeyBtn">地図読込</button>
-  </div>
-  <div class="row">
-    <input id="origin" type="text" placeholder="出発地（空欄で現在地）"/>
-    <input id="destination" type="text" placeholder="目的地"/>
-  </div>
-  <div class="row">
-    <button id="routeBtn">経路取得</button>
-    <button id="connectBtn">Picoに接続</button>
-    <button id="disconnectBtn">Picoから切断</button>
-    <button id="startNavBtn">ナビ開始</button>
-    <button id="stopNavBtn">ナビ停止</button>
-  </div>
-  <div id="map">APIキーを設定して地図を読み込んでください</div>
-  <pre id="log"></pre>
-  <script>
-    const SERVICE_UUID = '0000feed-0000-1000-8000-00805f9b34fb';
-    const NAV_CHAR_UUID = '0000feed-0001-1000-8000-00805f9b34fb';
-    let map, directionsService, directionsRenderer, steps=[], navChar=null, watchId=null;
-    let picoDevice = null; // 接続中のPicoデバイスを保持する変数
+  <header><strong>Bike LED Nav</strong></header>
+  <div class="row">
+    <input id="apiKey" type="text" value="AIzaSyChDQfjqq_3Uh11vuUF1ELximyztCvZ6Js" placeholder="Google Maps APIキー"/>
+    <button id="setApiKeyBtn">地図読込</button>
+  </div>
+  <div class="row">
+    <input id="origin" type="text" placeholder="出発地（空欄で現在地）"/>
+    <input id="destination" type="text" placeholder="目的地"/>
+  </div>
+  <div class="row">
+    <button id="routeBtn">経路取得</button>
+    <button id="connectBtn">Picoに接続</button>
+    <button id="disconnectBtn">Picoから切断</button>
+    <button id="startNavBtn">ナビ開始</button>
+    <button id="stopNavBtn">ナビ停止</button>
+  </div>
+  <div id="map">APIキーを設定して地図を読み込んでください</div>
+  <pre id="log"></pre>
+  <script>
+    const SERVICE_UUID = '0000feed-0000-1000-8000-00805f9b34fb';
+    const NAV_CHAR_UUID = '0000feed-0001-1000-8000-00805f9b34fb';
+    let map, directionsService, directionsRenderer, steps=[], navChar=null, watchId=null, picoDevice=null;
 
-    const log = (...args) => { const el=document.getElementById('log'); el.textContent+=args.join(' ')+'\n'; el.scrollTop=el.scrollHeight; };
+    const log = (...args) => { const el=document.getElementById('log'); el.textContent+=args.join(' ')+'\n'; el.scrollTop=el.scrollHeight; };
+    
+    window.initMap = () => {
+      log('地図API読込完了');
+      map = new google.maps.Map(document.getElementById('map'), { center: {lat: 35.681, lng: 139.767}, zoom: 13 });
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({ map });
+    };
 
-    window.initMap = () => {
-      log('地図API読込完了');
-      map = new google.maps.Map(document.getElementById('map'), { center: {lat: 35.681, lng: 139.767}, zoom: 13 });
-      directionsService = new google.maps.DirectionsService();
-      directionsRenderer = new google.maps.DirectionsRenderer({ map });
-    };
+    const loadGoogleMapsApi = () => {
+      const apiKey = document.getElementById('apiKey').value;
+      if (!apiKey) { alert('APIキーを入力してください'); return; }
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
+      script.onerror = () => alert('地図APIの読込に失敗。APIキーを確認してください。');
+      document.head.appendChild(script);
+    };
 
-    const loadGoogleMapsApi = () => {
-      const apiKey = document.getElementById('apiKey').value;
-      if (!apiKey) { alert('APIキーを入力してください'); return; }
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
-      script.onerror = () => alert('地図APIの読込に失敗。APIキーを確認してください。');
-      document.head.appendChild(script);
-    };
+    const fetchRoute = async () => {
+      const dest = document.getElementById('destination').value;
+      if (!dest) { alert('目的地を入力してください'); return; }
+      let origin = document.getElementById('origin').value;
+      if (!origin) {
+        try {
+          const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:10000}));
+          origin = {lat: pos.coords.latitude, lng: pos.coords.longitude};
+        } catch (err) { alert(`現在地取得失敗: ${err.message}`); return; }
+      }
+      directionsService.route({ origin, destination: dest, travelMode: 'DRIVING' }, (result, status) => {
+        if (status === 'OK') {
+          log('経路取得成功');
+          directionsRenderer.setDirections(result);
+          steps = result.routes[0].legs[0].steps.map(s => ({
+            end: {lat: s.end_location.lat(), lng: s.end_location.lng()},
+            maneuver: s.maneuver || 'straight'
+          }));
+        } else { alert('経路取得失敗: ' + status); }
+      });
+    };
 
-    const fetchRoute = async () => {
-      const dest = document.getElementById('destination').value;
-      if (!dest) { alert('目的地を入力してください'); return; }
-      let origin = document.getElementById('origin').value;
-      if (!origin) {
-        try {
-          const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:10000}));
-          origin = {lat: pos.coords.latitude, lng: pos.coords.longitude};
-        } catch (err) { alert(`現在地取得失敗: ${err.message}`); return; }
-      }
-      directionsService.route({ origin, destination: dest, travelMode: 'DRIVING' }, (result, status) => {
-        if (status === 'OK') {
-          log('経路取得成功');
-          directionsRenderer.setDirections(result);
-          steps = result.routes[0].legs[0].steps.map(s => ({
-            end: {lat: s.end_location.lat(), lng: s.end_location.lng()},
-            maneuver: s.maneuver || 'straight'
-          }));
-        } else { alert('経路取得失敗: ' + status); }
-      });
-    };
+    const toManeuverCode = m => {
+      const k = (m||'').toLowerCase();
+      if(k.includes('uturn')) return 0x08;
+      if(k.includes('left')) return k.includes('sharp') ? 0x04 : (k.includes('slight') ? 0x02 : 0x03);
+      if(k.includes('right')) return k.includes('sharp') ? 0x07 : (k.includes('slight') ? 0x05 : 0x06);
+      return 0x01;
+    };
 
-    const toManeuverCode = m => {
-      const k = (m||'').toLowerCase();
-      if(k.includes('uturn')) return 0x08;
-      if(k.includes('left')) return k.includes('sharp') ? 0x04 : (k.includes('slight') ? 0x02 : 0x03);
-      if(k.includes('right')) return k.includes('sharp') ? 0x07 : (k.includes('slight') ? 0x05 : 0x06);
-      return 0x01;
-    };
+    const connectToPico = async () => {
+      if (picoDevice && picoDevice.gatt.connected) { log('すでに接続済みです'); return; }
+      try {
+        log('Picoを検索中...');
+        picoDevice = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
+        log('デバイスを発見。接続しています...');
+        const server = await picoDevice.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        navChar = await service.getCharacteristic(NAV_CHAR_UUID);
+        log('Picoに接続成功');
+        picoDevice.addEventListener('gattserverdisconnected', () => {
+            log('Picoとの接続が切れました。');
+            navChar = null; picoDevice = null;
+        });
+      } catch(error) { log(`接続失敗: ${error.message}`); picoDevice=null; }
+    };
 
-    const connectToPico = async () => {
-      try {
-        log('Picoを検索中...');
-        picoDevice = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
-        const server = await picoDevice.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        navChar = await service.getCharacteristic(NAV_CHAR_UUID);
-        log('Picoに接続成功');
-      } catch(error) { log(`接続失敗: ${error.message}`); }
-    };
-
-    // Picoから切断する機能を追加
     const disconnectFromPico = () => {
       if (picoDevice && picoDevice.gatt.connected) {
         picoDevice.gatt.disconnect();
-        navChar = null;
-        picoDevice = null;
-        log('Picoから切断しました。');
-      } else {
-        log('Picoは接続されていません。');
+      } else { log('Picoは接続されていません。'); }
+    };
+
+    const sendCommand = async (msg_type, val1=0, val2=0, val3=0) => {
+      if (!navChar) { log('Picoに接続されていません'); return; }
+      try {
+        const buf = new ArrayBuffer(8);
+        const dv = new DataView(buf);
+        dv.setUint8(0, 0x01);      // version
+        dv.setUint8(1, msg_type);  // メッセージタイプ
+        dv.setUint16(2, val1, false); // 値1 (ビッグエンディアン)
+        dv.setUint8(4, val2);      // 値2
+        dv.setUint16(5, val3, false); // 値3 (ビッグエンディアン)
+        await navChar.writeValue(buf);
+        return true;
+      } catch (error) {
+        log(`コマンド送信失敗: ${error.message}`);
+        return false;
       }
     };
 
-    // 特定の文字パターンをPicoに送信する関数
-    // プロトコル: version(uint8), type(uint8=0x03), char_code(uint16), duration_seconds(uint8), reserved(uint16)
-    const sendCharacterPattern = async (characterCode, durationSeconds) => {
-        if (!navChar) { log('Picoに接続されていません。'); return; }
-        const buf = new ArrayBuffer(8);
-        const dv = new DataView(buf);
-        dv.setUint8(0, 0x01); // version
-        dv.setUint8(1, 0x03); // Message Type: CHARACTER_PATTERN
-        dv.setUint16(2, characterCode, false); // 表示する文字のコード（例: 'S' = 0x53）
-        dv.setUint8(4, durationSeconds); // 表示時間（秒） - ここをUint8に変更
-        dv.setUint16(5, 0x00, false); // Reserved (残りの3バイトを埋める)
-        try {
-            await navChar.writeValue(buf);
-            log(`文字パターン送信: コード=${characterCode} ('${String.fromCharCode(characterCode)}'), 時間=${durationSeconds}秒`);
-        } catch (error) {
-            log(`文字パターンの送信に失敗しました: ${error.message}`);
-        }
+    const sendStep = (idx, dist) => {
+      if (!steps[idx]) return;
+      const code = toManeuverCode(steps[idx].maneuver);
+      sendCommand(0x01, idx, code, Math.round(dist||0));
+      log(`ステップ送信: ${idx}, ${steps[idx].maneuver}`);
     };
 
-    // ナビゲーションステップをPicoに送信する関数
-    // プロトコル: version(uint8), type(uint8=0x01), step_idx(uint16), maneuver_code(uint8), distance(uint16)
-    const sendStep = async (idx, dist) => {
-      if(!navChar || !steps[idx]) return;
-      const code = toManeuverCode(steps[idx].maneuver);
-      const buf = new ArrayBuffer(8);
-      const dv = new DataView(buf);
-      dv.setUint8(0, 0x01); // version
-      dv.setUint8(1, 0x01); // type: NEXT_STEP
-      dv.setUint16(2, idx, false); // val1: ステップインデックス
-      dv.setUint8(4, code); // val2: マニューバーコード
-      dv.setUint16(5, Math.round(dist||0), false); // val3: 距離
-      await navChar.writeValue(buf);
-      log(`ステップ送信: ${idx}, ${steps[idx].maneuver}, 距離: ${Math.round(dist||0)}m`);
-    };
+    const haversineMeters = (a, b) => {
+      const R=6371e3, toRad=d=>d*Math.PI/180, φ1=toRad(a.lat), φ2=toRad(b.lat), Δφ=toRad(b.lat-a.lat), Δλ=toRad(b.lng-a.lng);
+      const h=Math.sin(Δφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+      return 2*R*Math.asin(Math.sqrt(h));
+    };
 
-    const haversineMeters = (a, b) => {
-      const R=6371e3, toRad=d=>d*Math.PI/180, φ1=toRad(a.lat), φ2=toRad(b.lat), Δφ=toRad(b.lat-a.lat), Δλ=toRad(b.lng-a.lng);
-      const h=Math.sin(Δφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-      return 2*R*Math.asin(Math.sqrt(h));
-    };
-
-    let currentStepIdx = 0;
-    const startNav = () => {
-      if (!steps.length) { alert('先に経路を取得してください'); return; }
-      if (watchId) navigator.geolocation.clearWatch(watchId);
+    let currentStepIdx = 0;
+    const startNav = () => {
+      if (!steps.length) { alert('先に経路を取得してください'); return; }
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      currentStepIdx = 0;
       
-      // ナビ開始時にLEDに「S」を3秒間表示
-      sendCharacterPattern(0x53, 3); // 'S'のASCIIコードは0x53, 3秒表示
+      // ナビ開始時に「S」を3秒間表示するコマンドを送信
+      sendCommand(0x03, 0x53, 3, 0); // msg_type=3, val1='S'(0x53), val2=3sec
 
-      watchId = navigator.geolocation.watchPosition(pos => {
-        const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
-        if (!steps[currentStepIdx]) { stopNav(); return; }
-        const dist = haversineMeters(cur, steps[currentStepIdx].end);
-        if (dist < 50) sendStep(currentStepIdx, dist); // 50m圏内に入ったら送信
-        if (dist < 30 && currentStepIdx < steps.length - 1) { // 30m圏内に入ったら次のステップへ
-          currentStepIdx++;
-          log(`次のステップへ: ${currentStepIdx}, 残り距離: ${dist.toFixed(1)}m`);
-        } else if (currentStepIdx === steps.length - 1 && dist < 30) {
-            log('最終目的地に到達しました！');
-            stopNav();
+      watchId = navigator.geolocation.watchPosition(pos => {
+        const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
+        if (!steps[currentStepIdx]) { stopNav(); return; }
+        const dist = haversineMeters(cur, steps[currentStepIdx].end);
+        if (dist < 50) sendStep(currentStepIdx, dist);
+        if (dist < 30 && currentStepIdx < steps.length - 1) {
+          currentStepIdx++;
+          log(`次のステップへ: ${currentStepIdx}`);
         }
-      }, err => log(`追跡エラー: ${err.message}`), {enableHighAccuracy:true});
-      log('ナビ開始');
-    };
+      }, err => log(`追跡エラー: ${err.message}`), {enableHighAccuracy:true});
+      log('ナビ開始');
+    };
 
-    // ナビ停止時にPicoにも停止コマンドを送信
-    const stopNav = () => {
-      if (watchId) navigator.geolocation.clearWatch(watchId); watchId=null;
-      if (navChar) {
-        const buf = new ArrayBuffer(8);
-        const dv = new DataView(buf);
-        dv.setUint8(0, 0x01); // version
-        dv.setUint8(1, 0x02); // type: CANCEL/STOP
-        navChar.writeValue(buf);
-      }
-      log('ナビ停止');
-    };
+    const stopNav = () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId); watchId=null;
+      sendCommand(0x02); // msg_type=2 (STOP)
+      log('ナビ停止');
+    };
 
-    document.getElementById('setApiKeyBtn').onclick = loadGoogleMapsApi;
-    document.getElementById('routeBtn').onclick = fetchRoute;
-    document.getElementById('connectBtn').onclick = connectToPico;
+    document.getElementById('setApiKeyBtn').onclick = loadGoogleMapsApi;
+    document.getElementById('routeBtn').onclick = fetchRoute;
+    document.getElementById('connectBtn').onclick = connectToPico;
     document.getElementById('disconnectBtn').onclick = disconnectFromPico;
-    document.getElementById('startNavBtn').onclick = startNav;
-    document.getElementById('stopNavBtn').onclick = stopNav;
-  </script>
+    document.getElementById('startNavBtn').onclick = startNav;
+    document.getElementById('stopNavBtn').onclick = stopNav;
+  </script>
 </body>
 </html>
