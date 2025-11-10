@@ -11,7 +11,7 @@
         /* 追加: Flexboxを使って全体を縦に配置 */
         display: flex;
         flex-direction: column;
-        min-height: 80vh; /* 少なくともビューポートの高さにする */
+        min-height: 60vh; /* 少なくともビューポートの高さにする */
     }
     header {
         /* 修正: 上下のパディングを減らす */
@@ -33,25 +33,25 @@
         padding: 8px;
     }
     button {
-        padding: 4px 12px;
+        padding: 3px 12px;
     }
     #map {
         /* 修正: 高さを元に戻し、残りのスペースを埋める */
-        height: 50vh; /* 元の高さに戻す */
+        height: 40vh; /* 元の高さに戻す */
         background: #e0e0e0;
         flex-grow: 1; /* 親要素の残りのスペースを埋める */
     }
     pre {
         background: #eee;
         padding: 8px;
-        max-height: 80px; /* ログエリアの最大高さ */
+        max-height: 60px; /* ログエリアの最大高さ */
         overflow: auto;
         /* flex-shrink: 0; */ /* ログエリアの高さは縮まないように */
     }
   </style>
 </head>
 <body>
-  <header><strong>Bike LED Nav</strong></header>
+  <header><strong>二輪車用ナビシステム</strong></header>
 
   <div class="row">
     <input id="apiKey" type="text" value="AIzaSyChDQfjqq_3Uh11vuUF1ELximyztCvZ6Js" placeholder="Google Maps APIキー"/>
