@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
@@ -10,36 +10,43 @@
         margin: 0;
         display: flex;
         flex-direction: column;
-        min-height: 60vh; 
+        min-height: 60vh;
     }
     header {
-        padding: 1px 8px; 
+        padding: 1px 8px;
         display: flex;
         gap: 8px;
-        background-color: #f0f0f0; 
-        border-bottom: 1px solid #ccc; 
+        background-color: #f0f0f0;
+        border-bottom: 1px solid #ccc;
     }
     .row {
         padding: 8px;
         display: flex;
         gap: 8px;
+        flex-wrap: wrap;
     }
     input {
         flex: 1;
         padding: 8px;
     }
     button {
-        padding: 3px 12px;
+        padding: 6px 14px;
+        border: none;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: opacity 0.2s;
     }
+    button:hover { opacity: 0.8; }
     #map {
-        height: 40vh; 
+        height: 40vh;
         background: #e0e0e0;
-        flex-grow: 1; 
+        flex-grow: 1;
     }
     pre {
         background: #eee;
         padding: 8px;
-        max-height: 60px; 
+        max-height: 80px;
         overflow: auto;
     }
   </style>
@@ -48,7 +55,7 @@
   <header><strong>二輪車用ナビシステム</strong></header>
 
   <div class="row">
-    <input id="apiKey" type="text" value="AIzaSyChDQfjqq_3Uh11vuUF1ELximyztCvZ6Js" placeholder="Google Maps APIキー"/>
+    <input id="apiKey" type="text" value="" placeholder="Google Maps APIキー"/>
     <button id="setApiKeyBtn">地図読込</button>
   </div>
   <div class="row">
@@ -62,23 +69,36 @@
     <button id="startNavBtn">ナビ開始</button>
     <button id="stopNavBtn">ナビ停止</button>
   </div>
+
+  <!-- ★ 追加部分：LED色変更ボタン -->
+  <div class="row">
+    <button style="background:#fff; color:#000;" onclick="sendLedColor(0)">白</button>
+    <button style="background:#f66; color:#fff;" onclick="sendLedColor(1)">赤</button>
+    <button style="background:#66f; color:#fff;" onclick="sendLedColor(2)">青</button>
+    <button style="background:#ff6; color:#000;" onclick="sendLedColor(3)">黄</button>
+    <button style="background:#6f6; color:#000;" onclick="sendLedColor(4)">緑</button>
+  </div>
+
   <div id="map">APIキーを設定して地図を読み込んでください</div>
-  
   <pre id="log"></pre>
-  
+
   <script>
     const SERVICE_UUID = '0000feed-0000-1000-8000-00805f9b34fb';
     const NAV_CHAR_UUID = '0000feed-0001-1000-8000-00805f9b34fb';
-    let map, directionsService, directionsRenderer, steps = [], navChar = null, watchId = null;
+    let map, directionsService, directionsRenderer, steps=[], navChar=null, watchId=null;
     let picoDevice = null;
 
-    const log = (...args) => { const el = document.getElementById('log'); el.textContent += args.join(' ') + '\n'; el.scrollTop = el.scrollHeight; };
+    const log = (...args) => { 
+      const el=document.getElementById('log'); 
+      el.textContent+=args.join(' ')+'\n'; 
+      el.scrollTop=el.scrollHeight; 
+    };
 
     window.initMap = () => {
       log('地図API読込完了');
       map = new google.maps.Map(document.getElementById('map'), { center: {lat: 35.681, lng: 139.767}, zoom: 13 });
       directionsService = new google.maps.DirectionsService();
-      directionsRenderer = new google.maps.DirectionsRenderer({ map: map });
+      directionsRenderer = new google.maps.DirectionsRenderer({ map });
     };
 
     const loadGoogleMapsApi = () => {
@@ -96,16 +116,16 @@
       let origin = document.getElementById('origin').value;
       if (!origin) {
         try {
-          const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 }));
-          origin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:10000}));
+          origin = {lat: pos.coords.latitude, lng: pos.coords.longitude};
         } catch (err) { alert(`現在地取得失敗: ${err.message}`); return; }
       }
-      directionsService.route({ origin: origin, destination: dest, travelMode: 'DRIVING' }, (result, status) => {
+      directionsService.route({ origin, destination: dest, travelMode: 'DRIVING' }, (result, status) => {
         if (status === 'OK') {
           log('経路取得成功');
           directionsRenderer.setDirections(result);
           steps = result.routes[0].legs[0].steps.map(s => ({
-            end: { lat: s.end_location.lat(), lng: s.end_location.lng() },
+            end: {lat: s.end_location.lat(), lng: s.end_location.lng()},
             maneuver: s.maneuver || 'straight'
           }));
         } else { alert('経路取得失敗: ' + status); }
@@ -113,10 +133,10 @@
     };
 
     const toManeuverCode = m => {
-      const k = (m || '').toLowerCase();
-      if (k.includes('uturn')) return 0x08;
-      if (k.includes('left')) return k.includes('sharp') ? 0x04 : (k.includes('slight') ? 0x02 : 0x03);
-      if (k.includes('right')) return k.includes('sharp') ? 0x07 : (k.includes('slight') ? 0x05 : 0x06);
+      const k = (m||'').toLowerCase();
+      if(k.includes('uturn')) return 0x08;
+      if(k.includes('left')) return k.includes('sharp') ? 0x04 : (k.includes('slight') ? 0x02 : 0x03);
+      if(k.includes('right')) return k.includes('sharp') ? 0x07 : (k.includes('slight') ? 0x05 : 0x06);
       return 0x01;
     };
 
@@ -128,11 +148,11 @@
         const service = await server.getPrimaryService(SERVICE_UUID);
         navChar = await service.getCharacteristic(NAV_CHAR_UUID);
         log('Picoに接続成功');
-      } catch (error) { log(`接続失敗: ${error.message}`); }
+      } catch(error) { log(`接続失敗: ${error.message}`); }
     };
 
     const disconnectFromPico = () => {
-      if (picoDevice && picoDevice.gatt && picoDevice.gatt.connected) {
+      if (picoDevice && picoDevice.gatt.connected) {
         picoDevice.gatt.disconnect();
         navChar = null;
         picoDevice = null;
@@ -142,70 +162,69 @@
       }
     };
 
-    // ★★★ 修正箇所 1 (S字が消えないバグの修正) ★★★
-    // Pico WHが期待するフォーマットに合わせ、val2 を Uint8 として 1 バイトで送るようにしています。
+    // LED色変更コマンド送信
+    const sendLedColor = async (colorCode) => {
+      if (!navChar) { log('Picoに接続されていません。'); return; }
+      const buf = new ArrayBuffer(8);
+      const dv = new DataView(buf);
+      dv.setUint8(0, 0x01); // version
+      dv.setUint8(1, 0x04); // type: LED_COLOR_CHANGE
+      dv.setUint8(2, colorCode); // val1: color code
+      dv.setUint8(3, 0); // reserved
+      dv.setUint16(4, 0, false);
+      dv.setUint16(6, 0, false);
+      try {
+        await navChar.writeValue(buf);
+        log(`LED色変更: コード=${colorCode}`);
+      } catch (e) {
+        log(`LED色変更送信失敗: ${e.message}`);
+      }
+    };
+
     const sendCharacterPattern = async (characterCode, durationSeconds) => {
       if (!navChar) { log('Picoに接続されていません。'); return; }
       const buf = new ArrayBuffer(8);
       const dv = new DataView(buf);
-      dv.setUint8(0, 0x01); // version (B)
-      dv.setUint8(1, 0x03); // Message Type: CHARACTER_PATTERN (B)
-      dv.setUint16(2, characterCode, false); // val1: 文字コード (H) big-endian
-      dv.setUint8(4, durationSeconds);      // val2: 表示時間（秒） (B)
-      dv.setUint16(5, 0x00, false);         // val3/reserved (H) big-endian (bytes 5-6)
-      // byte7 left as 0
+      dv.setUint8(0, 0x01);
+      dv.setUint8(1, 0x03);
+      dv.setUint16(2, characterCode, false);
+      dv.setUint8(4, durationSeconds);
+      dv.setUint16(5, 0x00, false);
       try {
         await navChar.writeValue(buf);
         log(`文字パターン送信: コード=${characterCode}, 時間=${durationSeconds}秒`);
       } catch (error) {
-        log(`文字パターンの送信に失敗しました: ${error.message}`);
+        log(`文字パターン送信失敗: ${error.message}`);
       }
     };
 
-    // sendStep関数は元の形式と一致しているので維持
     const sendStep = async (idx, dist) => {
-      if (!navChar || !steps[idx]) return;
+      if(!navChar || !steps[idx]) return;
       const code = toManeuverCode(steps[idx].maneuver);
       const buf = new ArrayBuffer(8);
       const dv = new DataView(buf);
-      dv.setUint8(0, 0x01); // version (B)
-      dv.setUint8(1, 0x01); // type: NEXT_STEP (B)
-      dv.setUint16(2, idx, false); // val1: ステップインデックス (H)
-      dv.setUint8(4, code); // val2: マニューバーコード (B)
-      dv.setUint16(5, Math.round(dist || 0), false); // val3: 距離 (H)
-      try {
-        await navChar.writeValue(buf);
-        log(`ステップ送信: ${idx}, ${steps[idx].maneuver}`);
-      } catch (e) {
-        log(`ステップ送信失敗: ${e.message}`);
-      }
+      dv.setUint8(0, 0x01);
+      dv.setUint8(1, 0x01);
+      dv.setUint16(2, idx, false);
+      dv.setUint8(4, code);
+      dv.setUint16(5, Math.round(dist||0), false);
+      await navChar.writeValue(buf);
+      log(`ステップ送信: ${idx}, ${steps[idx].maneuver}`);
     };
 
     const haversineMeters = (a, b) => {
-      const R = 6371e3;
-      const toRad = d => d * Math.PI / 180;
-      const φ1 = toRad(a.lat);
-      const φ2 = toRad(b.lat);
-      const Δφ = toRad(b.lat - a.lat);
-      const Δλ = toRad(b.lng - a.lng);
-      const h = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-      return 2 * R * Math.asin(Math.sqrt(h));
+      const R=6371e3, toRad=d=>d*Math.PI/180, φ1=toRad(a.lat), φ2=toRad(b.lat), Δφ=toRad(b.lat-a.lat), Δλ=toRad(b.lng-a.lng);
+      const h=Math.sin(Δφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+      return 2*R*Math.asin(Math.sqrt(h));
     };
 
     let currentStepIdx = 0;
     const startNav = () => {
       if (!steps.length) { alert('先に経路を取得してください'); return; }
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
-
-      // ナビ開始時にLEDに「S」を3秒間表示
-      // 'S'のASCIIコードは0x53
+      if (watchId) navigator.geolocation.clearWatch(watchId);
       sendCharacterPattern(0x53, 3);
-
       watchId = navigator.geolocation.watchPosition(pos => {
-        const cur = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
         if (!steps[currentStepIdx]) { stopNav(); return; }
         const dist = haversineMeters(cur, steps[currentStepIdx].end);
         if (dist < 50) sendStep(currentStepIdx, dist);
@@ -213,29 +232,21 @@
           currentStepIdx++;
           log(`次のステップへ: ${currentStepIdx}`);
         }
-      }, err => log(`追跡エラー: ${err.message}`), { enableHighAccuracy: true });
+      }, err => log(`追跡エラー: ${err.message}`), {enableHighAccuracy:true});
       log('ナビ開始');
     };
 
-    // ★★★ 修正箇所 2 (構文エラーの修正) ★★★
     const stopNav = () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
+      if (watchId) navigator.geolocation.clearWatch(watchId); watchId=null;
       if (navChar) {
         const buf = new ArrayBuffer(8);
         const dv = new DataView(buf);
-        dv.setUint8(0, 0x01); // version
-        dv.setUint8(1, 0x02); // type: CANCEL/STOP
-        dv.setUint16(2, 0x0000, false); // val1 (H)
-        dv.setUint8(4, 0x00); // val2 (B)
-        dv.setUint16(5, 0x0000, false); // val3 (H)
-        try {
-          navChar.writeValue(buf);
-        } catch (e) {
-          log(`停止コマンド送信失敗: ${e.message}`);
-        }
+        dv.setUint8(0, 0x01);
+        dv.setUint8(1, 0x02);
+        dv.setUint16(2, 0, false);
+        dv.setUint8(4, 0);
+        dv.setUint16(5, 0, false);
+        navChar.writeValue(buf);
       }
       log('ナビ停止');
     };
