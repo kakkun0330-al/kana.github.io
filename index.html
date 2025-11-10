@@ -18,13 +18,11 @@
             gap: 8px;
             background-color: #f0f0f0; /* 視認性向上のため色を追加 */
             border-bottom: 1px solid #ccc; /* 下線を追加 */
-            /* flex-shrink: 0; */ /* ヘッダーの高さは縮まないように */
         }
         .row {
             padding: 8px;
             display: flex;
             gap: 8px;
-            /* flex-shrink: 0; */ /* rowの高さは縮まないように */
         }
         input {
             flex: 1;
@@ -43,7 +41,6 @@
             padding: 8px;
             max-height: 60px; /* ログエリアの最大高さ */
             overflow: auto;
-            /* flex-shrink: 0; */ /* ログエリアの高さは縮まないように */
         }
     </style>
 </head>
@@ -73,7 +70,7 @@
         const SERVICE_UUID = '0000feed-0000-1000-8000-00805f9b34fb';
         const NAV_CHAR_UUID = '0000feed-0001-1000-8000-00805f9b34fb';
         let map, directionsService, directionsRenderer, steps=[], navChar=null, watchId=null;
-        let picoDevice = null; // 接続中のPicoデバイスを保持する変数
+        let picoDevice = null;
 
         const log = (...args) => { const el=document.getElementById('log'); el.textContent+=args.join(' ')+'\n'; el.scrollTop=el.scrollHeight; };
 
@@ -134,7 +131,6 @@
             } catch(error) { log(`接続失敗: ${error.message}`); }
         };
 
-        // Picoから切断する機能を追加
         const disconnectFromPico = () => {
             if (picoDevice && picoDevice.gatt.connected) {
                 picoDevice.gatt.disconnect();
@@ -146,33 +142,32 @@
             }
         };
 
-        // 特定の文字パターンをPicoに送信する関数を追加
-        // 新しいメッセージタイプ 0x03 (CHARACTER_PATTERN) を使用
+        // ✅ 修正版: エンディアン修正＋送信後遅延追加
         const sendCharacterPattern = async (characterCode, durationSeconds) => {
             if (!navChar) { log('Picoに接続されていません。'); return; }
             const buf = new ArrayBuffer(8);
             const dv = new DataView(buf);
             dv.setUint8(0, 0x01); // version
-            dv.setUint8(1, 0x03); // Message Type: CHARACTER_PATTERN (新しいタイプ)
-            dv.setUint16(2, characterCode, false); // 表示する文字のコード（例: 'S' = 0x53）
-            dv.setUint16(4, durationSeconds, true); // 表示時間（秒） <--- ここを修正しました
+            dv.setUint8(1, 0x03); // Message Type: CHARACTER_PATTERN
+            dv.setUint16(2, characterCode, false); // 表示文字コード (BE)
+            dv.setUint16(4, durationSeconds, true); // 表示時間 (LE)
             dv.setUint16(6, 0x00, false); // Reserved
             try {
                 await navChar.writeValue(buf);
+                await new Promise(r => setTimeout(r, 100)); // 安定化のため少し待機
                 log(`文字パターン送信: コード=${characterCode}, 時間=${durationSeconds}秒`);
             } catch (error) {
                 log(`文字パターンの送信に失敗しました: ${error.message}`);
             }
         };
 
-
         const sendStep = async (idx, dist) => {
             if(!navChar || !steps[idx]) return;
             const code = toManeuverCode(steps[idx].maneuver);
             const buf = new ArrayBuffer(8);
             const dv = new DataView(buf);
-            dv.setUint8(0, 0x01); // version
-            dv.setUint8(1, 0x01); // type: NEXT_STEP
+            dv.setUint8(0, 0x01);
+            dv.setUint8(1, 0x01);
             dv.setUint16(2, idx, false);
             dv.setUint8(4, code);
             dv.setUint16(5, Math.round(dist||0), false);
@@ -192,8 +187,7 @@
             if (watchId) navigator.geolocation.clearWatch(watchId);
             
             // ナビ開始時にLEDに「S」を3秒間表示
-            // 'S'のASCIIコードは0x53
-            sendCharacterPattern(0x53, 3); 
+            sendCharacterPattern(0x53, 3);
 
             watchId = navigator.geolocation.watchPosition(pos => {
                 const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
@@ -211,7 +205,7 @@
         const stopNav = () => {
             if (watchId) navigator.geolocation.clearWatch(watchId); watchId=null;
             if (navChar) {
-                const buf = new ArrayBuffer(8); new DataView(buf).setUint8(1, 0x02); // type: CANCEL/STOP
+                const buf = new ArrayBuffer(8); new DataView(buf).setUint8(1, 0x02);
                 navChar.writeValue(buf);
             }
             log('ナビ停止');
@@ -220,7 +214,7 @@
         document.getElementById('setApiKeyBtn').onclick = loadGoogleMapsApi;
         document.getElementById('routeBtn').onclick = fetchRoute;
         document.getElementById('connectBtn').onclick = connectToPico;
-        document.getElementById('disconnectBtn').onclick = disconnectFromPico; // 切断ボタンのイベントリスナー
+        document.getElementById('disconnectBtn').onclick = disconnectFromPico;
         document.getElementById('startNavBtn').onclick = startNav;
         document.getElementById('stopNavBtn').onclick = stopNav;
     </script>
