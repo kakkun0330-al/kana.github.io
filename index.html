@@ -129,8 +129,8 @@
         navChar = await service.getCharacteristic(NAV_CHAR_UUID);
         log('Picoに接続成功');
 
-        // ★★★ 接続成功時に「S」を3秒間表示 ★★★
-        sendCharacterPattern(0x53, 3); 
+        // ★★★ 修正箇所 1: 接続成功時のS字表示を削除 ★★★
+        // sendCharacterPattern(0x53, 3); // この行を削除またはコメントアウト
 
       } catch(error) { log(`接続失敗: ${error.message}`); }
     };
@@ -146,7 +146,7 @@
       }
     };
 
-    // ★★★ 「S字が消えない」バグを修正した関数 ★★★
+    // S字が消えないバグを修正した関数
     const sendCharacterPattern = async (characterCode, durationSeconds) => {
         if (!navChar) { log('Picoに接続されていません。'); return; }
         const buf = new ArrayBuffer(8);
@@ -187,10 +187,12 @@
     let currentStepIdx = 0;
     const startNav = () => {
       if (!steps.length) { alert('先に経路を取得してください'); return; }
+      if (!navChar) { alert('Picoに接続されていません。先に接続してください。'); return; } // 接続チェック
       if (watchId) navigator.geolocation.clearWatch(watchId);
       
-      // ★★★ 接続時S字表示に変更したため、ここは削除 ★★★
-      // sendCharacterPattern(0x53, 3); 
+      // ★★★ 修正箇所 2: ナビ開始時にS字表示コマンドを移動 ★★★
+      // 'S'のASCIIコードは0x53
+      sendCharacterPattern(0x53, 3); 
 
       watchId = navigator.geolocation.watchPosition(pos => {
         const cur = {lat: pos.coords.latitude, lng: pos.coords.longitude};
@@ -209,7 +211,6 @@
       if (watchId) navigator.geolocation.clearWatch(watchId); watchId=null;
       if (navChar) {
         const buf = new ArrayBuffer(8); 
-        // 停止コマンドもPico側の形式(!BBHBH)に合わせる
         const dv = new DataView(buf);
         dv.setUint8(0, 0x01); // version
         dv.setUint8(1, 0x02); // type: CANCEL/STOP
